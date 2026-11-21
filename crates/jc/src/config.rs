@@ -1,0 +1,100 @@
+//! Optional `<workspace>/config.toml`. Every field has a default, so the file
+//! may be missing or contain only what the user wants to change:
+//!
+//! ```toml
+//! [tools]
+//! ffmpeg = "/opt/ffmpeg/bin/ffmpeg"   # ffprobe is looked up next to it
+//! prefer_system_ffmpeg = false        # always use jc's own ffmpeg build
+//!
+//! [doctor]
+//! yt_dlp_max_age_days = 3
+//! ```
+
+use anyhow::{Context, Result};
+use serde::Deserialize;
+use std::path::{Path, PathBuf};
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct Config {
+    pub tools: ToolsConfig,
+    pub doctor: DoctorConfig,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(default)]
+pub struct ToolsConfig {
+    /// Use this ffmpeg instead of a managed or system one.
+    pub ffmpeg: Option<PathBuf>,
+    /// Defaults to the ffprobe next to `ffmpeg`.
+    pub ffprobe: Option<PathBuf>,
+    /// Use this yt-dlp instead of the managed one. jc cannot update it.
+    pub yt_dlp: Option<PathBuf>,
+    /// Use an ffmpeg found on PATH when it has every feature jc needs,
+    /// instead of downloading one.
+    pub prefer_system_ffmpeg: bool,
+}
+
+impl Default for ToolsConfig {
+    fn default() -> Self {
+        Self {
+            ffmpeg: None,
+            ffprobe: None,
+            yt_dlp: None,
+            prefer_system_ffmpeg: true,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(default)]
+pub struct DoctorConfig {
+    /// Check for a new yt-dlp release when the last check is older than this.
+    pub yt_dlp_max_age_days: u32,
+}
+
+impl Default for DoctorConfig {
+    fn default() -> Self {
+        Self {
+            yt_dlp_max_age_days: 7,
+        }
+    }
+}
+
+impl Config {
+    pub fn load(path: &Path) -> Result<Self> {
+        match std::fs::read_to_string(path) {
+            Ok(text) => {
+                toml::from_str(&text).with_context(|| format!("reading {}", path.display()))
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Self::default()),
+            Err(e) => Err(e).with_context(|| format!("reading {}", path.display())),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn empty_file_gives_defaults() {
+        let config: Config = toml::from_str("").unwrap();
+        assert!(config.tools.prefer_system_ffmpeg);
+        assert_eq!(config.doctor.yt_dlp_max_age_days, 7);
+    }
+
+    #[test]
+    fn partial_sections_keep_other_defaults() {
+        let config: Config = toml::from_str("[tools]\nffmpeg = \"/x/ffmpeg\"\n").unwrap();
+        assert_eq!(config.tools.ffmpeg.as_deref(), Some(Path::new("/x/ffmpeg")));
+        assert!(config.tools.prefer_system_ffmpeg);
+    }
+
+    #[test]
+    fn missing_file_gives_defaults() {
+        let dir = tempfile::tempdir().unwrap();
+        let config = Config::load(&dir.path().join("config.toml")).unwrap();
+        assert!(config.tools.yt_dlp.is_none());
+    }
+}

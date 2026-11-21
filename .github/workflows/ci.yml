@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - name: rustfmt
+        if: runner.os == 'Linux'
+        run: cargo fmt --all --check
+      - name: clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: test
+        run: cargo test --locked
+
+  # Installs the real tools on every platform jc ships for, then renders a
+  # captioned, loudness-normalized vertical clip with the managed ffmpeg.
+  doctor:
+    name: doctor (${{ matrix.os }})
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        # macos-latest is Apple Silicon; macos-15-intel covers Intel Macs.
+        os: [ubuntu-latest, macos-latest, macos-15-intel, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    env:
+      JC_WORKSPACE: ${{ runner.temp }}/jc-workspace
+      JC_CACHE_DIR: ${{ runner.temp }}/jc-cache
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: build
+        run: cargo build --locked
+      - name: force jc's own ffmpeg build
+        run: |
+          mkdir -p "$JC_WORKSPACE"
+          printf '[tools]\nprefer_system_ffmpeg = false\n' > "$JC_WORKSPACE/config.toml"
+      - name: jc doctor (install)
+        run: target/debug/jc doctor
+      - name: jc doctor (second run is a no-op)
+        run: |
+          target/debug/jc doctor --json > doctor.json
+          cat doctor.json
+          grep -q '"ok": true' doctor.json
+          if grep -q '"status": "installed"' doctor.json; then
+            echo "the second doctor run reinstalled a tool"; exit 1
+          fi
+      - name: render a captioned vertical clip
+        working-directory: ${{ runner.temp }}
+        run: |
+          bin="$JC_CACHE_DIR/bin"
+          printf '%s\n' \
+            '[Script Info]' 'ScriptType: v4.00+' 'PlayResX: 1080' 'PlayResY: 1920' \
+            '[V4+ Styles]' \
+            'Format: Name, Fontname, Fontsize, PrimaryColour, OutlineColour, BorderStyle, Outline, Alignment' \
+            'Style: Default,Arial,90,&H00FFFFFF,&H00000000,1,6,2' \
+            '[Events]' 'Format: Layer, Start, End, Style, Text' \
+            'Dialogue: 0,0:00:00.00,0:00:02.00,Default,Bonjour à tous !' > t.ass
+          "$bin/ffmpeg" -hide_banner -y \
+            -f lavfi -i color=c=blue:s=1080x1920:d=2 -f lavfi -i sine=f=440:d=2 \
+            -vf ass=t.ass -af loudnorm=I=-14 -c:v libx264 -c:a aac -shortest out.mp4
+          "$bin/ffprobe" -v error -show_entries stream=codec_name,width,height -of csv=p=0 out.mp4 | tee streams.txt
+          grep -q 'h264,1080,1920' streams.txt
+          grep -q 'aac' streams.txt

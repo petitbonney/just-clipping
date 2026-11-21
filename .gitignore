@@ -2,7 +2,7 @@
 docs/DESIGN.md
 
 # Rust
-/target/
+target/
 **/*.rs.bk
 *.pdb
 

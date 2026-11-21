@@ -1,0 +1,46 @@
+# Build check for the native libraries the analysis stages need (whisper.cpp
+# and an ONNX runtime for face detection). Informational: failures here do
+# not block anything, they tell us which backend to pick.
+name: Spike - native deps
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - spikes/native-deps/**
+      - .github/workflows/spike-native-deps.yml
+
+env:
+  CARGO_TERM_COLOR: always
+  YUNET_URL: https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx
+
+jobs:
+  spike:
+    name: ${{ matrix.backend }} (${{ matrix.os }})
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, macos-15-intel, windows-latest]
+        backend: [ort, tract]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: spikes/native-deps
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: spikes/native-deps
+          key: ${{ matrix.backend }}
+      - name: build
+        run: |
+          features="${{ matrix.backend }}"
+          if [ "$RUNNER_OS" = macOS ] && [ "$(uname -m)" = arm64 ]; then features="$features metal"; fi
+          cargo build --release --features "$features"
+      - name: run YuNet once
+        run: |
+          curl -sSL -o yunet.onnx "$YUNET_URL"
+          target/release/native-deps-spike yunet.onnx

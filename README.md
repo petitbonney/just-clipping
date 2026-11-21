@@ -63,7 +63,7 @@ The two exchange JSON files in a project folder, so every `jc` step can also be 
 
 ## Roadmap
 
-- [ ] **M0:** project skeleton, `jc doctor`, project manifest
+- [x] **M0:** project skeleton, `jc doctor`, project manifest
 - [ ] **M1:** ingest and analyze (transcript, chat, heatmap, audio, scenes)
 - [ ] **M2:** candidate moments, `/clip` ranking, review page
 - [ ] **M3:** vertical render: layouts, en/fr animated captions, loudness
@@ -71,6 +71,26 @@ The two exchange JSON files in a project folder, so every `jc` step can also be 
 - [ ] **M5:** prebuilt binaries, plugin install, Dockerfile
 - [ ] **Phase 2:** live mode, podcast and IRL layouts, more languages
 - [ ] **Phase 3:** compilations, automatic posting
+
+## Development
+
+You need a recent stable Rust toolchain.
+
+```bash
+cargo build
+cargo test
+cargo run -- doctor        # downloads yt-dlp and ffmpeg into the cache
+cargo run -- status        # lists projects in the workspace
+```
+
+- **Workspace** (projects, `config.toml`): `~/JustClipping`, or `--workspace` / `JC_WORKSPACE`.
+- **Cache** (tools, models): the OS cache folder, or `JC_CACHE_DIR`.
+- **Every command takes `--json`**, which prints only the result on stdout. Progress goes to stderr.
+- **Exit codes:** 0 ok, 1 error, 2 bad arguments, 3 not implemented yet, 4 setup incomplete (`jc doctor`), 5 project not found.
+
+`jc doctor` uses the ffmpeg on your PATH only if it has libass, libx264 and the loudness filters. Otherwise it downloads a pinned, checksummed static build. yt-dlp is always jc's own copy, so jc can keep it up to date.
+
+`spikes/native-deps` is a separate build check for whisper.cpp and the ONNX face-detection backends. Its CI workflow runs on all platforms.
 
 ## A note on rights
 
