@@ -1,11 +1,10 @@
-# Throwaway build check for the native dependencies of the analysis stages:
-# do whisper.cpp (whisper-rs) and an ONNX runtime build, link and run on every
-# OS we ship for? Kept out of the jc workspace so a normal `cargo build` never
-# pays for compiling whisper.cpp.
+# Build check for the native side of the analysis stages: does whisper.cpp
+# (whisper-rs) build, link and run on every OS we ship for, and does `tract`
+# run the YuNet face model there? Kept out of the jc workspace so a normal
+# `cargo build` never pays for compiling whisper.cpp.
 #
-# Face detection has two candidate backends, compared side by side:
-#   --features ort    ONNX Runtime via `ort` (prebuilt binaries, fastest)
-#   --features tract  `tract`, pure Rust, no native library at all
+# `tract` was picked over `ort` (ONNX Runtime), which has no prebuilt
+# binaries for Intel macOS.
 [package]
 name = "native-deps-spike"
 version = "0.0.0"
@@ -16,10 +15,7 @@ publish = false
 
 [dependencies]
 whisper-rs = "0.16"
-ort = { version = "=2.0.0-rc.15", optional = true }
-tract-onnx = { version = "0.23", optional = true }
+tract-onnx = "0.23"
 
 [features]
 metal = ["whisper-rs/metal"]
-ort = ["dep:ort"]
-tract = ["dep:tract-onnx"]
