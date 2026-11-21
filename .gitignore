@@ -1,0 +1,40 @@
+# Private design notes (never committed)
+docs/DESIGN.md
+
+# Rust
+/target/
+**/*.rs.bk
+*.pdb
+
+# Python (optional fallback scripts)
+__pycache__/
+*.py[cod]
+.venv/
+
+# Local workspace data, media and models
+# (the default workspace is ~/JustClipping, these cover runs inside the repo)
+/projects/
+/cache/
+/export/
+library.sqlite
+ggml-*.bin
+*.onnx
+
+# Secrets and local config
+.env
+.env.*
+config.local.toml
+
+# Claude Code local settings
+.claude/settings.local.json
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editors
+.idea/
+.vscode/
+*.swp
+*~
