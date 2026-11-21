@@ -2,7 +2,6 @@ name: CI
 
 on:
   push:
-    branches: [master]
   pull_request:
   workflow_dispatch:
 
@@ -16,6 +15,9 @@ env:
 jobs:
   test:
     name: test (${{ matrix.os }})
+    # Every push runs CI, so a pull request only needs its own run when it
+    # comes from a fork.
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name != github.repository
     strategy:
       fail-fast: false
       matrix:
@@ -49,13 +51,18 @@ jobs:
     defaults:
       run:
         shell: bash
-    env:
-      JC_WORKSPACE: ${{ runner.temp }}/jc-workspace
-      JC_CACHE_DIR: ${{ runner.temp }}/jc-cache
     steps:
       - uses: actions/checkout@v5
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      # The runner context is not allowed in job-level env, so set the paths
+      # here. `pwd -W` (Git Bash on Windows) gives D:/a/_temp, a form both
+      # bash and Windows programs accept.
+      - name: set jc folders
+        run: |
+          tmp="$(cd "$RUNNER_TEMP" && (pwd -W 2>/dev/null || pwd))"
+          echo "JC_WORKSPACE=$tmp/jc-workspace" >> "$GITHUB_ENV"
+          echo "JC_CACHE_DIR=$tmp/jc-cache" >> "$GITHUB_ENV"
       - name: build
         run: cargo build --locked
       - name: force jc's own ffmpeg build
