@@ -164,6 +164,54 @@ pub fn ffmpeg_build(p: Platform) -> Option<FfmpegBuild> {
     })
 }
 
+// ---------------------------------------------------------------------------
+// deno: the JavaScript runtime yt-dlp needs for full YouTube support.
+// ---------------------------------------------------------------------------
+
+pub const DENO_VERSION: &str = "2.9.8";
+
+pub fn deno_build(p: Platform) -> Option<PinnedFile> {
+    macro_rules! deno {
+        ($target:literal, $sha:literal) => {
+            PinnedFile {
+                url: concat!(
+                    "https://github.com/denoland/deno/releases/download/v2.9.8/deno-",
+                    $target,
+                    ".zip"
+                ),
+                sha256: $sha,
+            }
+        };
+    }
+    Some(match (p.os, p.arch) {
+        ("macos", "aarch64") => deno!(
+            "aarch64-apple-darwin",
+            "9f0bf660393da2eaff044cdc7444cb08c73f235849b61d224d825a194ce7c98e"
+        ),
+        ("macos", "x86_64") => deno!(
+            "x86_64-apple-darwin",
+            "4b2f5edd2639b7470f034238b321d7002d8dfb4726d8558f52c17afac370eb2c"
+        ),
+        ("linux", "x86_64") => deno!(
+            "x86_64-unknown-linux-gnu",
+            "e890975bc2549807bbcc0b584ffafda72cc7c93349dd99c80483dd784f6c4609"
+        ),
+        ("linux", "aarch64") => deno!(
+            "aarch64-unknown-linux-gnu",
+            "d49596c20b9788cf8f5d8ddf644103d4bde56ed239753f0bdb92ba9361d51905"
+        ),
+        ("windows", "x86_64") => deno!(
+            "x86_64-pc-windows-msvc",
+            "cba84b26e0df5ae7f74fc66b86a95b866872a86292ebd84fa1e959927edd93bf"
+        ),
+        ("windows", "aarch64") => deno!(
+            "aarch64-pc-windows-msvc",
+            "b413b92b735b50c198e8fe3b85af1aa50e29d5f72e229aab701d132286e14cef"
+        ),
+        _ => return None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -182,6 +230,7 @@ mod tests {
             let p = Platform { os, arch };
             assert!(yt_dlp_asset(p).is_some(), "yt-dlp for {os} {arch}");
             assert!(ffmpeg_build(p).is_some(), "ffmpeg for {os} {arch}");
+            assert!(deno_build(p).is_some(), "deno for {os} {arch}");
         }
     }
 

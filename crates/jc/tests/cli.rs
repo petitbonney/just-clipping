@@ -39,6 +39,8 @@ impl Env {
                 channel: Some("chan".into()),
                 title: Some("A long video".into()),
                 duration_s: Some(3600.0),
+                video_id: None,
+                video: None,
                 rights: Rights::default(),
             },
         );
@@ -147,8 +149,6 @@ fn unreadable_manifest_is_listed_not_fatal() {
 fn unimplemented_commands_exit_3() {
     let env = Env::new();
     for args in [
-        vec!["ingest", "https://www.twitch.tv/videos/1"],
-        vec!["analyze"],
         vec!["candidates"],
         vec!["review", "--stage", "clips"],
         vec!["render"],
@@ -181,7 +181,7 @@ fn doctor_check_reports_missing_tools_without_downloading() {
     assert_eq!(out.status.code(), Some(4));
     let v = json(&out.stdout);
     assert_eq!(v["ok"], false);
-    let yt_dlp = &v["tools"][0];
+    let yt_dlp = tool(&v, "yt-dlp");
     assert_eq!(yt_dlp["name"], "yt-dlp");
     assert_eq!(yt_dlp["status"], "missing");
     assert!(
@@ -204,7 +204,7 @@ fn doctor_uses_config_paths_as_given() {
         .output()
         .unwrap();
     let v = json(&out.stdout);
-    let ffmpeg = &v["tools"][1];
+    let ffmpeg = tool(&v, "ffmpeg");
     assert_eq!(ffmpeg["name"], "ffmpeg");
     assert_eq!(ffmpeg["status"], "missing");
     assert!(
@@ -213,6 +213,125 @@ fn doctor_uses_config_paths_as_given() {
             .unwrap()
             .contains("/nonexistent/ffmpeg")
     );
+}
+
+fn tool<'a>(report: &'a serde_json::Value, name: &str) -> &'a serde_json::Value {
+    report["tools"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|t| t["name"] == name)
+        .unwrap_or_else(|| panic!("no {name} in the doctor report"))
+}
+
+#[test]
+fn doctor_check_lists_models() {
+    let env = Env::new();
+    let out = env
+        .jc()
+        .args(["doctor", "--check", "--json"])
+        .output()
+        .unwrap();
+    let v = json(&out.stdout);
+    for name in ["deno", "whisper", "vad", "yunet"] {
+        assert_eq!(tool(&v, name)["status"], "missing", "{name}");
+    }
+    assert_eq!(tool(&v, "whisper")["version"], "large-v3-turbo-q5_0");
+}
+
+#[test]
+fn unknown_whisper_model_is_an_error() {
+    let env = Env::new();
+    std::fs::write(
+        env.workspace.path().join("config.toml"),
+        "[models]\nwhisper = \"huge\"\n",
+    )
+    .unwrap();
+    let out = env
+        .jc()
+        .args(["doctor", "--check", "--json"])
+        .output()
+        .unwrap();
+    let whisper = tool(&json(&out.stdout), "whisper").clone();
+    assert_eq!(whisper["status"], "error");
+    assert!(whisper["message"].as_str().unwrap().contains("tiny"));
+}
+
+#[test]
+fn ingest_rejects_unsupported_sources() {
+    let env = Env::new();
+    for (arg, needle) in [
+        ("https://vimeo.com/123", "not a supported URL"),
+        ("https://www.twitch.tv/somechannel", "channel"),
+        (
+            "no-such-file.mp4",
+            "not a supported URL or an existing file",
+        ),
+    ] {
+        let out = env.jc().args(["ingest", arg, "--json"]).output().unwrap();
+        assert_eq!(out.status.code(), Some(1), "{arg}");
+        let msg = json(&out.stdout)["error"]["message"]
+            .as_str()
+            .unwrap()
+            .to_string();
+        assert!(msg.contains(needle), "{arg}: {msg}");
+    }
+}
+
+#[test]
+fn ingest_without_tools_points_to_doctor() {
+    let env = Env::new();
+    std::fs::write(
+        env.workspace.path().join("config.toml"),
+        "[tools]\nprefer_system_ffmpeg = false\n",
+    )
+    .unwrap();
+    let video = env.workspace.path().join("clip.mp4");
+    std::fs::write(&video, b"not really a video").unwrap();
+    let out = env
+        .jc()
+        .args(["ingest", video.to_str().unwrap(), "--json"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(4));
+    let v = json(&out.stdout);
+    assert_eq!(v["error"]["code"], "setup_incomplete");
+    assert!(v["error"]["hint"].as_str().unwrap().contains("jc doctor"));
+}
+
+#[test]
+fn analyze_needs_an_ingested_project() {
+    let env = Env::new();
+    let out = env.jc().args(["analyze", "--json"]).output().unwrap();
+    assert_eq!(out.status.code(), Some(5), "no project");
+
+    let mut manifest = Manifest::new(
+        "fresh",
+        Source {
+            kind: SourceKind::Local,
+            url: None,
+            path: Some("/x.mp4".into()),
+            channel: None,
+            title: None,
+            duration_s: None,
+            video_id: None,
+            video: None,
+            rights: Rights::default(),
+        },
+    );
+    manifest.set_stage(Stage::Ingest, StageStatus::Failed, Some("boom".into()));
+    ProjectDir::create(env.workspace.path().join("projects/fresh"), &manifest).unwrap();
+    let out = env
+        .jc()
+        .args(["analyze", "-p", "fresh", "--json"])
+        .output()
+        .unwrap();
+    assert_eq!(out.status.code(), Some(1));
+    let msg = json(&out.stdout)["error"]["message"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    assert!(msg.contains("not ingested"), "{msg}");
 }
 
 fn is_empty(dir: &Path) -> bool {

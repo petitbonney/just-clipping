@@ -1,0 +1,10 @@
+# In real life: just chatting, travel, outdoors, events.
+name = "irl"
+layouts = ["track_subject", "center_crop", "blur_fill"]
+duration = { min_s = 15, max_s = 75, target_s = 35 }
+weights = { chat_rate = 1.0, chat_hype = 0.6, heatmap = 1.0, audio = 0.6, scenes = 0.5 }
+chat_emotes = ["KEKW", "LUL", "OMEGALUL", "Pog", "monkaS", "Kappa", "Sadge", "ICANT", "Aware"]
+
+[detect]
+youtube_categories = ["Travel & Events", "People & Blogs"]
+twitch_games = ["Just Chatting", "IRL", "Travel & Outdoors"]

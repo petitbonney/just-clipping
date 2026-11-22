@@ -33,7 +33,7 @@ pub enum Command {
     /// Create a project from a YouTube/Twitch URL or a local file and download it
     Ingest(IngestArgs),
     /// Transcribe and compute per-second signals (chat, audio, heatmap, scenes)
-    Analyze(ProjectArgs),
+    Analyze(AnalyzeArgs),
     /// Find candidate moments in the analysis timeline
     Candidates(ProjectArgs),
     /// Open the local review page and wait for the user's picks
@@ -67,6 +67,18 @@ pub struct ProjectArgs {
 }
 
 #[derive(Debug, Args)]
+pub struct AnalyzeArgs {
+    #[command(flatten)]
+    pub project: ProjectArgs,
+    /// Redo every step, even those already done
+    #[arg(long)]
+    pub force: bool,
+    /// Spoken language code, such as en or fr [default: detected]
+    #[arg(long)]
+    pub language: Option<String>,
+}
+
+#[derive(Debug, Args)]
 pub struct StatusArgs {
     /// Project id or folder [default: the current folder, or list all projects]
     #[arg(long, short)]
@@ -77,6 +89,22 @@ pub struct StatusArgs {
 pub struct IngestArgs {
     /// YouTube or Twitch URL, or a path to a local video file
     pub source: String,
+    /// Import chat from a file: a TwitchDownloader JSON export, a yt-dlp
+    /// YouTube .live_chat.json, or a chat.jsonl
+    #[arg(long, value_name = "FILE", conflicts_with = "no_chat")]
+    pub chat: Option<PathBuf>,
+    /// Do not download chat
+    #[arg(long)]
+    pub no_chat: bool,
+    /// Content profile (gaming, podcast, irl) [default: guessed from metadata]
+    #[arg(long)]
+    pub profile: Option<String>,
+    /// Spoken language code, such as en or fr [default: detected during analyze]
+    #[arg(long)]
+    pub language: Option<String>,
+    /// Who you are clipping for (recorded in the project)
+    #[arg(long, value_name = "NAME")]
+    pub clipping_for: Option<String>,
 }
 
 #[derive(Debug, Args)]

@@ -1,0 +1,24 @@
+# Français. See README "Adding a language".
+code = "fr"
+name = "Français"
+whisper_code = "fr"
+segmentation = "whitespace"
+
+fillers = ["euh", "heu", "ben", "bah", "hein", "genre"]
+
+chat_hype = [
+  "mdr", "ptdr", "xptdr", "jpp", "mortel", "masterclass", "incroyable",
+  "oh non", "nan", "clip", "clippez", "énorme", "enorme", "dingue", "ouf",
+  "chaud", "gg", "wtf", "omg", "lol",
+  "😂", "🤣", "💀", "🔥", "😱", "😭",
+]
+
+# Non-breaking space before high punctuation and inside « », so a line never
+# starts with lone punctuation.
+[typography]
+nbsp_before = ["!", "?", ":", ";", "»"]
+nbsp_after = ["«"]
+
+[caption]
+max_chars_line = 18
+font = "Montserrat-ExtraBold"

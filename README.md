@@ -74,23 +74,66 @@ The two exchange JSON files in a project folder, so every `jc` step can also be 
 
 ## Development
 
-You need a recent stable Rust toolchain.
+You need a recent stable Rust toolchain, plus CMake and a C++ compiler for whisper.cpp.
 
 ```bash
 cargo build
 cargo test
-cargo run -- doctor        # downloads yt-dlp and ffmpeg into the cache
-cargo run -- status        # lists projects in the workspace
 ```
 
-- **Workspace** (projects, `config.toml`): `~/JustClipping`, or `--workspace` / `JC_WORKSPACE`.
+### Running the pipeline by hand
+
+```bash
+jc doctor                                   # installs yt-dlp, deno, ffmpeg and the models
+jc ingest https://www.twitch.tv/videos/123  # creates the project, downloads video + chat
+jc analyze -p <project-id>                  # transcript and per-second signals
+jc status                                   # where every project is
+```
+
+- `jc ingest` takes a YouTube or Twitch VOD URL or a local file. Rerunning it on the same source reopens the project and resumes downloads.
+- **Chat:** YouTube live chat replays come through yt-dlp. Twitch chat comes from Twitch's internal GraphQL API, which is unofficial. If it fails, export the chat with [TwitchDownloader](https://github.com/lay295/TwitchDownloader) and run `jc ingest <url> --chat chat.json`. `--chat` also accepts a yt-dlp `.live_chat.json` or a `chat.jsonl`.
+- `jc analyze` writes `analysis/timeline.json`, with one 0–1 value per second for each signal (speech, audio, scenes, heatmap, chat_rate, chat_hype). Finished steps are skipped on rerun, and an interrupted transcript resumes where it stopped.
+- **Transcription speed:** voice activity detection skips silence and music. On a CPU-only machine, `large-v3-turbo` runs at about realtime on speech. For long VODs, set `whisper = "small"` (see below).
+
+### Folders and config
+
+- **Workspace** (projects, `config.toml`, custom data): `~/JustClipping`, or `--workspace` / `JC_WORKSPACE`.
 - **Cache** (tools, models): the OS cache folder, or `JC_CACHE_DIR`.
+
+`<workspace>/config.toml` is optional. Every key has a default:
+
+```toml
+[models]
+whisper = "large-v3-turbo-q5_0"  # tiny, base, small, large-v3-turbo-q5_0, large-v3-turbo
+
+[transcribe]
+threads = 0                      # 0 = one per core, up to 8
+beam_size = 1                    # >1 = beam search: a bit more accurate, much slower
+
+[ingest]
+max_height = 1080
+
+[chat]
+twitch_delay_s = 5.0             # chat reacts late; shifted back by this much
+youtube_delay_s = 4.0
+
+[tools]                          # use your own binaries instead of jc's
+# ffmpeg = "/path/to/ffmpeg"
+# yt_dlp = "/path/to/yt-dlp"
+# deno = "/path/to/deno"
+prefer_system_ffmpeg = true      # use PATH's ffmpeg if it has libass, x264, loudnorm
+```
+
+### Adding a language or content profile
+
+Languages (`data/lang/*.toml`) and profiles (`data/profiles/*.toml`) are data, built into `jc`. To add or change one without rebuilding, put a file with the same layout in `<workspace>/data/lang/` or `<workspace>/data/profiles/`. A file with an existing name replaces the built-in one.
+
+### Conventions
+
 - **Every command takes `--json`**, which prints only the result on stdout. Progress goes to stderr.
 - **Exit codes:** 0 ok, 1 error, 2 bad arguments, 3 not implemented yet, 4 setup incomplete (`jc doctor`), 5 project not found.
-
-`jc doctor` uses the ffmpeg on your PATH only if it has libass, libx264 and the loudness filters. Otherwise it downloads a pinned, checksummed static build. yt-dlp is always jc's own copy, so jc can keep it up to date.
-
-`spikes/native-deps` is a separate build check for whisper.cpp and the ONNX face-detection backends. Its CI workflow runs on all platforms.
+- `jc doctor` uses the ffmpeg on your PATH only if it has libass, libx264 and the loudness filters. Otherwise it downloads a pinned, checksummed static build. yt-dlp is always jc's own copy, so jc can keep it up to date. Every model is pinned by URL and SHA-256.
+- `spikes/native-deps` is a separate build check for whisper.cpp and the YuNet face model in `tract`. Its CI workflow runs on all platforms.
 
 ## A note on rights
 

@@ -316,6 +316,8 @@ mod tests {
                 channel: None,
                 title: None,
                 duration_s: None,
+                video_id: None,
+                video: None,
                 rights: Rights::default(),
             },
         )

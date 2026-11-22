@@ -8,6 +8,18 @@
 //!
 //! [doctor]
 //! yt_dlp_max_age_days = 3
+//!
+//! [models]
+//! whisper = "small"                   # faster, less accurate
+//!
+//! [transcribe]
+//! threads = 4
+//!
+//! [ingest]
+//! max_height = 1440
+//!
+//! [chat]
+//! twitch_delay_s = 6.0
 //! ```
 
 use anyhow::{Context, Result};
@@ -19,6 +31,10 @@ use std::path::{Path, PathBuf};
 pub struct Config {
     pub tools: ToolsConfig,
     pub doctor: DoctorConfig,
+    pub models: ModelsConfig,
+    pub transcribe: TranscribeConfig,
+    pub ingest: IngestConfig,
+    pub chat: ChatConfig,
 }
 
 #[derive(Debug, Deserialize)]
@@ -30,6 +46,9 @@ pub struct ToolsConfig {
     pub ffprobe: Option<PathBuf>,
     /// Use this yt-dlp instead of the managed one. jc cannot update it.
     pub yt_dlp: Option<PathBuf>,
+    /// Use this deno (yt-dlp's JavaScript runtime for YouTube) instead of the
+    /// managed one.
+    pub deno: Option<PathBuf>,
     /// Use an ffmpeg found on PATH when it has every feature jc needs,
     /// instead of downloading one.
     pub prefer_system_ffmpeg: bool,
@@ -41,6 +60,7 @@ impl Default for ToolsConfig {
             ffmpeg: None,
             ffprobe: None,
             yt_dlp: None,
+            deno: None,
             prefer_system_ffmpeg: true,
         }
     }
@@ -57,6 +77,63 @@ impl Default for DoctorConfig {
     fn default() -> Self {
         Self {
             yt_dlp_max_age_days: 7,
+        }
+    }
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(default)]
+pub struct ModelsConfig {
+    /// Whisper model: `tiny`, `base`, `small`, `large-v3-turbo-q5_0` or
+    /// `large-v3-turbo`.
+    pub whisper: String,
+}
+
+impl Default for ModelsConfig {
+    fn default() -> Self {
+        Self {
+            whisper: "large-v3-turbo-q5_0".into(),
+        }
+    }
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct TranscribeConfig {
+    /// CPU threads for whisper. 0 = one per core, up to 8.
+    pub threads: u32,
+    /// 1 = greedy decoding (fast). Higher values use beam search, which is
+    /// slightly more accurate and several times slower.
+    pub beam_size: u32,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(default)]
+pub struct IngestConfig {
+    /// Highest video resolution to download.
+    pub max_height: u32,
+}
+
+impl Default for IngestConfig {
+    fn default() -> Self {
+        Self { max_height: 1080 }
+    }
+}
+
+/// Viewers react a few seconds after something happens. Chat is shifted back
+/// by this much so reactions line up with their cause.
+#[derive(Debug, Deserialize)]
+#[serde(default)]
+pub struct ChatConfig {
+    pub twitch_delay_s: f64,
+    pub youtube_delay_s: f64,
+}
+
+impl Default for ChatConfig {
+    fn default() -> Self {
+        Self {
+            twitch_delay_s: 5.0,
+            youtube_delay_s: 4.0,
         }
     }
 }

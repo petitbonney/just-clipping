@@ -65,10 +65,11 @@ jobs:
           echo "JC_CACHE_DIR=$tmp/jc-cache" >> "$GITHUB_ENV"
       - name: build
         run: cargo build --locked
-      - name: force jc's own ffmpeg build
+      # jc's own ffmpeg build, and the small whisper model to keep CI fast.
+      - name: configure jc
         run: |
           mkdir -p "$JC_WORKSPACE"
-          printf '[tools]\nprefer_system_ffmpeg = false\n' > "$JC_WORKSPACE/config.toml"
+          printf '[tools]\nprefer_system_ffmpeg = false\n\n[models]\nwhisper = "tiny"\n' > "$JC_WORKSPACE/config.toml"
       - name: jc doctor (install)
         run: target/debug/jc doctor
       - name: jc doctor (second run is a no-op)
@@ -96,3 +97,47 @@ jobs:
           "$bin/ffprobe" -v error -show_entries stream=codec_name,width,height -of csv=p=0 out.mp4 | tee streams.txt
           grep -q 'h264,1080,1920' streams.txt
           grep -q 'aac' streams.txt
+      # Spoken English from the OS's own voice, a test pattern, and a chat
+      # burst: ingest and analyze must find all of it.
+      - name: ingest and analyze a test video
+        working-directory: ${{ runner.temp }}
+        run: |
+          bin="$JC_CACHE_DIR/bin"
+          jc="$GITHUB_WORKSPACE/target/debug/jc"
+          if [ "$RUNNER_OS" = Windows ]; then py=python; else py=python3; fi
+          text="Hello everyone and welcome back to the stream. Today we fight the final boss. Watch out, here it comes. Oh no, I died. That was incredible."
+          speech=""
+          case "$RUNNER_OS" in
+            macOS) say -o speech.aiff "$text" && speech=speech.aiff ;;
+            Linux) sudo apt-get install -y -qq espeak-ng > /dev/null && espeak-ng -w speech.wav "$text" && speech=speech.wav ;;
+            Windows) powershell -NoProfile -Command "Add-Type -AssemblyName System.Speech; \$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; \$s.SetOutputToWaveFile('speech.wav'); \$s.Speak('$text'); \$s.Dispose()" && speech=speech.wav ;;
+          esac
+          if [ -n "$speech" ]; then
+            audio=(-i "$speech"); filter="[1:a]apad=whole_dur=30[a]"
+          else
+            echo "no system voice; testing without speech"
+            audio=(-f lavfi -i "sine=f=300:d=30"); filter="[1:a]anull[a]"
+          fi
+          "$bin/ffmpeg" -hide_banner -loglevel error -y -f lavfi -i "testsrc2=s=1280x720:r=30:d=30" "${audio[@]}" \
+            -filter_complex "$filter" -map 0:v -map "[a]" -c:v libx264 -preset veryfast -c:a aac -t 30 e2e.mp4
+          $py - <<'PY'
+          import json
+          with open("chat.jsonl", "w") as f:
+              for t in range(30):
+                  for _ in range(15 if 10 <= t < 13 else 1):
+                      f.write(json.dumps({"t": t + 0.5, "user": "u", "text": "LUL" if 10 <= t < 13 else "hi"}) + "\n")
+          PY
+          "$jc" ingest e2e.mp4 --chat chat.jsonl --json > ingest.json
+          id=$($py -c 'import json; print(json.load(open("ingest.json"))["project"])')
+          "$jc" analyze -p "$id" --json > analyze.json
+          cat analyze.json
+          SPEECH="$speech" $py - <<'PY'
+          import json, os
+          a = json.load(open("analyze.json"))
+          for s in ["audio", "scenes", "speech", "chat_rate", "chat_hype"]:
+              assert s in a["signals"], f"missing signal {s}: {a['signals']}"
+          if os.environ["SPEECH"]:
+              assert a["words"] > 5, f"expected words, got {a['words']}"
+              assert a["language"] == "en", a["language"]
+          print("ok:", a["words"], "words,", a["signals"])
+          PY

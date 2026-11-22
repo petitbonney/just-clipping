@@ -52,6 +52,13 @@ pub struct Source {
     pub title: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub duration_s: Option<f64>,
+    /// Platform video id (`dQw4w9WgXcQ`, `v123456`), to find the project
+    /// again from a URL.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video_id: Option<String>,
+    /// The downloaded or linked video, relative to the project folder.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video: Option<String>,
     #[serde(default)]
     pub rights: Rights,
 }
@@ -395,6 +402,8 @@ mod tests {
                 channel: Some("streamer".into()),
                 title: Some("Long stream".into()),
                 duration_s: Some(10834.0),
+                video_id: None,
+                video: None,
                 rights: Rights {
                     clipping_for: Some("streamer".into()),
                     notes: String::new(),

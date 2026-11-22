@@ -1,0 +1,25 @@
+# English. See README "Adding a language".
+code = "en"
+name = "English"
+whisper_code = "en"
+segmentation = "whitespace"
+
+# Spoken fillers, cut from clips when they are their own word.
+fillers = ["um", "uh", "erm", "hmm", "like", "you know"]
+
+# Chat words that mean "something just happened". Matched case-insensitively
+# on whole words; letters repeated 3+ times count once ("loool" = "lol").
+chat_hype = [
+  "lol", "lmao", "lmfao", "rofl", "omg", "wtf", "no way", "lets go",
+  "let's go", "insane", "clip it", "clip that", "clip", "holy", "what",
+  "bruh", "dead", "crazy", "goat", "gg",
+  "😂", "🤣", "💀", "🔥", "😱", "😭",
+]
+
+[typography]
+nbsp_before = []
+nbsp_after = []
+
+[caption]
+max_chars_line = 18
+font = "Montserrat-ExtraBold"

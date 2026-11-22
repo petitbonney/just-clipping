@@ -1,0 +1,11 @@
+# Conversations: podcasts, interviews, talk shows.
+name = "podcast"
+layouts = ["speaker_switch", "center_crop", "blur_fill"]
+duration = { min_s = 20, max_s = 75, target_s = 45 }
+weights = { chat_rate = 0.4, chat_hype = 0.4, heatmap = 1.0, audio = 0.6, scenes = 0.1 }
+chat_emotes = ["KEKW", "LUL", "OMEGALUL", "Pog", "monkaS", "Kappa", "Sadge", "ICANT"]
+
+[detect]
+youtube_categories = []
+twitch_games = ["Podcasts", "Talk Shows & Podcasts"]
+title_words = ["podcast", "interview", "épisode", "episode", "ep."]

@@ -12,6 +12,14 @@ pub struct ToolState {
     pub yt_dlp: Option<YtDlpState>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ffmpeg: Option<FfmpegState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub deno: Option<DenoState>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DenoState {
+    pub version: String,
+    pub installed_at: Timestamp,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

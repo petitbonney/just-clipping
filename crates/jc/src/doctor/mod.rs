@@ -7,8 +7,11 @@
 //! - **ffmpeg/ffprobe** come from `config.toml` if set, else jc's own pinned
 //!   build if installed, else the system ffmpeg if it has every feature jc
 //!   needs (libass, x264, loudness filters), else jc downloads its own.
+//! - **Models**: the whisper model chosen in `config.toml` and YuNet, pinned
+//!   by hash.
 
 pub mod download;
+pub mod models;
 pub mod platform;
 pub mod probe;
 pub mod state;
@@ -23,7 +26,7 @@ use download::Http;
 use jiff::Timestamp;
 use platform::{FfmpegBuild, FfmpegSource, Platform};
 use serde::Serialize;
-use state::{FfmpegState, ToolState, YtDlpState};
+use state::{DenoState, FfmpegState, ToolState, YtDlpState};
 use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
@@ -182,7 +185,12 @@ impl Report for DoctorReport {
                 (Some(Origin::Config), Some(p)) => format!("config: {}", p.display()),
                 _ => String::new(),
             };
-            let version = t.version.as_deref().map(short_version).unwrap_or("");
+            // ffmpeg versions carry a long build suffix ("9.1-https://…").
+            let version = match t.name {
+                "ffmpeg" | "ffprobe" => t.version.as_deref().map(short_version),
+                _ => t.version.as_deref(),
+            }
+            .unwrap_or("");
             let _ = writeln!(
                 out,
                 "  {:<10} {:<8} {:<12} {}",
@@ -274,7 +282,19 @@ pub fn run(paths: &Paths, config: &Config, args: &DoctorArgs) -> Result<DoctorRe
 
     let yt_dlp = ensure_yt_dlp(&mut ctx);
     let (ffmpeg, ffprobe) = ensure_ffmpeg(&mut ctx);
-    let tools = vec![yt_dlp, ffmpeg, ffprobe];
+    let deno = ensure_deno(&mut ctx);
+    let models_dir = paths.models_dir();
+    let whisper = match models::whisper_model(&config.models.whisper) {
+        Some(spec) => ensure_model(&ctx, &models_dir, "whisper", spec),
+        None => ToolReport::new("whisper", ToolStatus::Error).message(format!(
+            "unknown whisper model \"{}\" in config.toml; choose one of {}",
+            config.models.whisper,
+            models::whisper_ids().join(", ")
+        )),
+    };
+    let vad = ensure_model(&ctx, &models_dir, "vad", models::SILERO_VAD);
+    let yunet = ensure_model(&ctx, &models_dir, "yunet", models::YUNET);
+    let tools = vec![yt_dlp, deno, ffmpeg, ffprobe, whisper, vad, yunet];
     let ok = tools.iter().all(|t| t.status.is_ok());
 
     Ok(DoctorReport {
@@ -284,17 +304,108 @@ pub fn run(paths: &Paths, config: &Config, args: &DoctorArgs) -> Result<DoctorRe
         cache: paths.cache.clone(),
         tools,
         gpu: detect_gpu(platform),
-        later: vec![
-            Later {
-                what: "whisper and face detection models",
-                milestone: "M1",
-            },
-            Later {
-                what: "caption fonts",
-                milestone: "M3",
-            },
-        ],
+        later: vec![Later {
+            what: "caption fonts",
+            milestone: "M3",
+        }],
     })
+}
+
+// ---------------------------------------------------------------------------
+// deno (JavaScript runtime for yt-dlp's YouTube support)
+// ---------------------------------------------------------------------------
+
+fn ensure_deno(ctx: &mut Ctx) -> ToolReport {
+    const NAME: &str = "deno";
+    if let Some(path) = ctx.config.tools.deno.clone() {
+        return if path.is_file() {
+            ToolReport::found(NAME, ToolStatus::Ok, Origin::Config, path)
+        } else {
+            ToolReport::new(NAME, ToolStatus::Missing).message(format!(
+                "tools.deno in config.toml points to {}, which does not exist",
+                path.display()
+            ))
+        };
+    }
+    let path = ctx.managed("deno");
+    let recorded = ctx.state.deno.as_ref().map(|s| s.version.clone());
+    if path.is_file() && recorded.as_deref() == Some(platform::DENO_VERSION) {
+        return ToolReport::found(NAME, ToolStatus::Ok, Origin::Managed, path).version(recorded);
+    }
+    let Some(file) = platform::deno_build(ctx.platform) else {
+        return ToolReport::new(NAME, ToolStatus::Missing).message(format!(
+            "no deno build for {} {}; install deno and set tools.deno in config.toml",
+            ctx.platform.os, ctx.platform.arch
+        ));
+    };
+    if ctx.args.check {
+        return ToolReport::new(NAME, ToolStatus::Missing)
+            .message("run `jc doctor` to download it (about 40 MB); yt-dlp needs it for YouTube");
+    }
+    ctx.log(format!("Downloading deno {}…", platform::DENO_VERSION));
+    let result = (|| -> Result<()> {
+        let tmp = ctx.bin_dir.join(".download");
+        std::fs::create_dir_all(&tmp)?;
+        let zip = tmp.join("deno.zip");
+        let r = ctx
+            .http
+            .download(file.url, &zip, file.sha256, "deno")
+            .and_then(|()| download::extract_from_zip(&zip, &ctx.platform.exe("deno"), &path));
+        let _ = std::fs::remove_dir_all(&tmp);
+        r?;
+        ctx.state.deno = Some(DenoState {
+            version: platform::DENO_VERSION.to_string(),
+            installed_at: Timestamp::now(),
+        });
+        ctx.state.save(&ctx.bin_dir)
+    })();
+    match result {
+        Ok(()) => {
+            let status = if recorded.is_some() {
+                ToolStatus::Updated
+            } else {
+                ToolStatus::Installed
+            };
+            ToolReport::found(NAME, status, Origin::Managed, path)
+                .version(Some(platform::DENO_VERSION.to_string()))
+        }
+        Err(e) => ToolReport::new(NAME, ToolStatus::Error).message(format!("{e:#}")),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Models
+// ---------------------------------------------------------------------------
+
+fn ensure_model(
+    ctx: &Ctx,
+    models_dir: &Path,
+    name: &'static str,
+    spec: models::ModelSpec,
+) -> ToolReport {
+    let path = spec.path(models_dir);
+    if spec.is_installed(models_dir) {
+        return ToolReport::found(name, ToolStatus::Ok, Origin::Managed, path)
+            .version(Some(spec.id.to_string()));
+    }
+    if ctx.args.check {
+        return ToolReport::new(name, ToolStatus::Missing)
+            .version(Some(spec.id.to_string()))
+            .message(format!(
+                "run `jc doctor` to download it (about {} MB)",
+                spec.approx_mb()
+            ));
+    }
+    ctx.log(format!(
+        "Downloading the {name} model {} (about {} MB)…",
+        spec.id,
+        spec.approx_mb()
+    ));
+    match ctx.http.download(spec.url, &path, spec.sha256, spec.id) {
+        Ok(()) => ToolReport::found(name, ToolStatus::Installed, Origin::Managed, path)
+            .version(Some(spec.id.to_string())),
+        Err(e) => ToolReport::new(name, ToolStatus::Error).message(format!("{e:#}")),
+    }
 }
 
 // ---------------------------------------------------------------------------

@@ -1,0 +1,18 @@
+# Gameplay streams and videos, usually with a facecam.
+name = "gaming"
+layouts = ["split_facecam", "center_crop", "blur_fill"]
+duration = { min_s = 15, max_s = 75, target_s = 35 }
+# How much each signal counts when finding moments (0 = ignore).
+weights = { chat_rate = 1.0, chat_hype = 0.9, heatmap = 1.0, audio = 0.8, scenes = 0.2 }
+# Twitch/7TV/BTTV emotes that signal hype, matched exactly.
+chat_emotes = [
+  "KEKW", "LUL", "LULW", "OMEGALUL", "Pog", "PogChamp", "PogU", "POGGERS",
+  "monkaS", "monkaW", "Kappa", "Clap", "EZ", "Sadge", "PepeLaugh", "ICANT",
+  "Aware", "catJAM", "GIGACHAD",
+]
+
+# How ingest guesses this profile from the source metadata.
+[detect]
+youtube_categories = ["Gaming"]
+# "*" = any Twitch category no other profile claims.
+twitch_games = ["*"]
